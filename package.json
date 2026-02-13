@@ -1,0 +1,14 @@
+{
+  "name": "freetext-vc",
+  "version": "1.0.0",
+  "description": "Free Random Text and Video Chat",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.13.0",
+    "node-fetch": "^2.7.0"
+  }
+}
