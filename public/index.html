@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Freetext&VC</title>
+<style>
+body { background: #333; color: #ddd; text-align: center; font-family: Arial; margin: 0; padding: 20px; }
+.container { max-width: 600px; margin: auto; background: #444; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+button { background: #555; color: #fff; padding: 10px 20px; margin: 10px; border: none; border-radius: 5px; cursor: pointer; }
+button:hover { background: #666; }
+video { width: 45%; background: black; margin: 10px; border-radius: 5px; }
+#chatBox { height: 200px; overflow-y: auto; border: 1px solid #555; background: #3a3a3a; width: 80%; margin: 10px auto; padding: 10px; border-radius: 5px; }
+#msg { background: #555; color: #ddd; border: none; padding: 10px; width: 60%; border-radius: 5px; }
+#partnerInfo { font-size: 18px; margin: 10px; }
+#flag { width: 30px; vertical-align: middle; }
+#videoControls { display: none; }
+#chatControls { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Freetext&VC - Connect Worldwide</h2>
+  <p>Select your preference and mode. Connect with opposite genders globally. No recording allowed for privacy.</p>
+
+  <select id="pref">
+    <option value="male">Male (connect to females)</option>
+    <option value="female">Female (connect to males)</option>
+    <option value="lesbian">Lesbian (connect to lesbians)</option>
+    <option value="any">Any</option>
+  </select>
+
+  <select id="mode">
+    <option value="chat">Chat</option>
+    <option value="video">Video</option>
+  </select>
+
+  <button onclick="start()">Start</button>
+  <button onclick="disconnect()">Disconnect</button>
+
+  <div id="partnerInfo"></div>
+  <div id="chatBox"></div>
+  <div id="chatControls">
+    <input id="msg" placeholder="Type message...">
+    <button onclick="sendMsg()">Send</button>
+    <button id="videoBtn" onclick="requestVideo()">Start Video</button>
+  </div>
+
+  <div id="videoControls">
+    <select id="camera">
+      <option value="user">Front Camera</option>
+      <option value="environment">Back Camera</option>
+    </select>
+    <button onclick="switchCamera()">Switch</button>
+  </div>
+
+  <video id="local" autoplay muted playsinline></video>
+  <video id="remote" autoplay playsinline></video>
+</div>
+
+<script>
+let ws, pc, localStream, currentMode, partnerCountry;
+
+function start() {
+  ws = new WebSocket(`wss://${location.host}`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: "join",
+      mode: document.getElementById("mode").value,
+      pref: document.getElementById("pref").value
+    }));
+  };
+
+  ws.onmessage = async msg => {
+    const data = JSON.parse(msg.data);
+
+    if (data.type === "matched") {
+      partnerCountry = data.partnerCountry;
+      document.getElementById("partnerInfo").innerHTML = `Connected to Stranger from <img id="flag" src="https://flagcdn.com/${partnerCountry}.svg" alt="flag">`;
+      document.getElementById("chatControls").style.display = 'block';
+      currentMode = document.getElementById("mode").value;
+      if (currentMode === "video") startVideo('user');
+    }
+
+    if (data.type === "signal") {
+      if (data.signal.type === "offer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "signal", signal: answer }));
+      } else {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+      }
+    }
+
+    if (data.type === "chat") {
+      document.getElementById("chatBox").innerHTML += "<p>Stranger: " + data.msg + "</p>";
+    }
+
+    if (data.type === "request_video") {
+      if (confirm("Stranger wants to start video. Accept?")) {
+        ws.send(JSON.stringify({ type: "accept_video" }));
+        startVideo('user');
+      }
+    }
+
+    if (data.type === "start_video") {
+      startVideo('user');
+    }
+  };
+}
+
+async function startVideo(facingMode) {
+  if (localStream) localStream.getTracks().forEach(track => track.stop());
+  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
+  document.getElementById("local").srcObject = localStream;
+  document.getElementById("videoControls").style.display = 'block';
+  document.getElementById("videoBtn").style.display = 'none';
+
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:openrelay.metered.ca:80" },
+      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayprojectstp" },
+      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayprojectstp" },
+      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayprojectstp" }
+    ]
+  });
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.ontrack = e => { document.getElementById("remote").srcObject = e.streams[0]; };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  ws.send(JSON.stringify({ type: "signal", signal: offer }));
+}
+
+function switchCamera() {
+  const facingMode = document.getElementById("camera").value;
+  startVideo(facingMode);
+}
+
+function sendMsg() {
+  const msg = document.getElementById("msg").value;
+  document.getElementById("chatBox").innerHTML += "<p>You: " + msg + "</p>";
+  ws.send(JSON.stringify({ type: "chat", msg }));
+  document.getElementById("msg").value = "";
+}
+
+function requestVideo() {
+  ws.send(JSON.stringify({ type: "request_video" }));
+}
+
+function disconnect() {
+  if (pc) pc.close();
+  if (ws) ws.close();
+  location.reload();
+}
+</script>
+</body>
+</html>
