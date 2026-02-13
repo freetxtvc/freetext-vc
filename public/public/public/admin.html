@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Freetext&VC Admin</title>
+<style>
+body { background: #333; color: #ddd; text-align: center; font-family: Arial; margin: 0; padding: 20px; }
+.container { max-width: 800px; margin: auto; background: #444; padding: 20px; border-radius: 10px; }
+button { background: #555; color: #fff; padding: 10px; margin: 5px; border: none; border-radius: 5px; }
+#login { margin: 20px; }
+#list { list-style: none; padding: 0; }
+#list li { background: #555; margin: 5px; padding: 10px; border-radius: 5px; }
+#monitorBox { height: 200px; overflow-y: auto; border: 1px solid #555; background: #3a3a3a; width: 80%; margin: 10px auto; padding: 10px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Freetext&VC Admin Dashboard</h2>
+  <p>Monitor activities to ensure no illegal content. Text only.</p>
+
+  <div id="login">
+    <input id="pass" type="password" placeholder="Admin Password">
+    <button onclick="login()">Login</button>
+  </div>
+
+  <ul id="list"></ul>
+  <div id="monitorBox"></div>
+  <button id="stopMonitor" style="display:none;" onclick="stopMonitor()">Stop Monitoring</button>
+</div>
+
+<script>
+let ws, currentSession;
+
+function login() {
+  ws = new WebSocket(`wss://${location.host}`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "admin_login", pass: document.getElementById("pass").value }));
+  };
+
+  ws.onmessage = msg => {
+    const data = JSON.parse(msg.data);
+
+    if (data.type === "logged_in") {
+      document.getElementById("login").style.display = 'none';
+      updateList(data.list);
+    }
+
+    if (data.type === "update_list") {
+      updateList(data.list);
+    }
+
+    if (data.type === "monitor_chat") {
+      document.getElementById("monitorBox").innerHTML += "<p>" + data.from + ": " + data.msg + "</p>";
+    }
+
+    if (data.type === "error") {
+      alert(data.msg);
+    }
+  };
+}
+
+function updateList(list) {
+  const ul = document.getElementById("list");
+  ul.innerHTML = '';
+  list.forEach(item => {
+    const li = document.createElement('li');
+    li.innerHTML = `ID: ${item.id} | Mode: ${item.mode} | Pref: ${item.pref} | Country: ${item.country} | Status: ${item.status}`;
+    if (item.sessionId) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Monitor';
+      btn.onclick = () => monitor(item.sessionId);
+      li.appendChild(btn);
+    }
+    ul.appendChild(li);
+  });
+}
+
+function monitor(sessionId) {
+  currentSession = sessionId;
+  document.getElementById("monitorBox").innerHTML = '<p>Monitoring session ' + sessionId + '</p>';
+  document.getElementById("stopMonitor").style.display = 'block';
+  ws.send(JSON.stringify({ type: "monitor", sessionId }));
+}
+
+function stopMonitor() {
+  document.getElementById("stopMonitor").style.display = 'none';
+  document.getElementById("monitorBox").innerHTML = '';
+  ws.send(JSON.stringify({ type: "stop_monitor", sessionId: currentSession }));
+}
+</script>
+</body>
+</html>
